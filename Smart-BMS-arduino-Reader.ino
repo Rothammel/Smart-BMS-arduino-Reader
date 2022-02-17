@@ -1,13 +1,13 @@
 //spart RAM ein
-char StringBuffer[80];
+char StringBuffer[250];
 #define P(str) strncpy_P(StringBuffer, PSTR(str), sizeof(StringBuffer))
 
-#include <SoftwareSerial.h>
+//#include <SoftwareSerial.h>
 #include <Ethernet.h>        //für w5100 im arduino "built in" enthalten
 #include <PubSubClient.h>    //MQTT Bibliothek von Nick O'Leary
 #include <SPI.h>             //für w5100 im arduino "built in" enthalten
 #include <avr/wdt.h>         //Watchdog
-#include <TimeLib.h>         //Uhrzeit & Datum Library von Michael Margolis
+#include <TimeLib.h>         //Uhrzeit & Datum Library von Paul Stoffregen 
 
 // ---- Konstanten ----
 byte mac[] = {0x62, 0x0F, 0xD9, 0x3D, 0x60, 0xAF};
@@ -35,17 +35,17 @@ const long     intervalSensoren  = 1000;
 unsigned long vorMillisReconnect = 100000; // nur alle 100s einen reconnect versuchen
 const long    intervalReconnect  = 100000;
 
-SoftwareSerial MySerial(2, 3);  // RX, TX
 EthernetClient ethClient;
 PubSubClient client(ethClient);
 
 
 void setup()
 {
-  Serial.begin(9600);    // will be sending all data to serial, for later analysis
-  MySerial.begin(9600);  // set the data rate for the MySerial port
+  Serial.begin(115200);    // will be sending all data to serial, for later analysis
+  Serial1.begin(9600);  // set the data rate for the MySerial port
   client.setServer(server, 1883); // Adresse des MQTT-Brokers
   client.setCallback(callback);   // Handler für eingehende Nachrichten
+  client.setBufferSize(512);      // increase MQTT buffer for Home Asssistant auto discover
   
   // Ethernet-Verbindung aufbauen
   Ethernet.begin(mac, ip);
@@ -296,7 +296,7 @@ void call_Basic_info()
   //  DD  A5 03 00  FF  FD  77
   // 221 165  3  0 255 253 119
   uint8_t data[7] = {221, 165, 3, 0, 255, 253, 119};
-  MySerial.write(data, 7);
+  Serial1.write(data, 7);
 }
 //--------------------------------------------------------------------------
 void call_get_cells_v()
@@ -306,7 +306,7 @@ void call_get_cells_v()
   // DD  A5  4 0 FF  FC  77
   // 221 165 4 0 255 252 119
   uint8_t data[7] = {221, 165, 4, 0, 255, 252, 119};
-  MySerial.write(data, 7);
+  Serial1.write(data, 7);
 }
 //--------------------------------------------------------------------------
 void call_Hardware_info()
@@ -317,15 +317,15 @@ void call_Hardware_info()
   // 221 165  5  0 255 251 119
   uint8_t data[7] = {221, 165, 5, 0, 255, 251, 119};
   // uint8_t data[7] = {DD, A5, 05, 00, FF, FB, 77};
-  MySerial.write(data, 7);
+  Serial1.write(data, 7);
 }
 
 //------------------------------------------------------------------------------
 void flush()
 { // FLUSH
   delay(100); // give it a mo to settle, seems to miss occasionally without this
-  while (MySerial.available() > 0)
-  { MySerial.read();
+  while (Serial1.available() > 0)
+  { Serial1.read();
   }
   delay(50); // give it a mo to settle, seems to miss occasionally without this
 }
@@ -336,11 +336,11 @@ void get_bms_feedback()  // returns with up to date, inString= chars, inInts= nu
 {
   inString = ""; // clear instring for new incoming
   delay(100); // give it a mo to settle, seems to miss occasionally without this
-  if (MySerial.available() > 0) {
+  if (Serial1.available() > 0) {
     {
       for (int i = 0; i < 4; i++)               // just get first 4 bytes
       {
-        incomingByte = MySerial.read();
+        incomingByte = Serial1.read();
         if (i == 3)
         { // could look at 3rd byte, it's the ok signal
           Length = (incomingByte); // The fourth byte holds the length of data, excluding last 3 bytes checksum etc
@@ -353,7 +353,7 @@ void get_bms_feedback()  // returns with up to date, inString= chars, inInts= nu
       }
       //  Length = Length + 2; // want to get the checksum too, for writing back, saves calculating it later
       for (int i = 0; i < Length + 2; i++) { // get the checksum in last two bytes, just in case need later
-        incomingByte = MySerial.read(); // get the rest of the data, how long it might be.
+        incomingByte = Serial1.read(); // get the rest of the data, how long it might be.
         inString += (char)incomingByte; // convert the incoming byte to a char and add it to the string
         inInts[i] = incomingByte;       // save incoming byte to array as int
       }
@@ -418,6 +418,29 @@ void reconnect()
       // Abonierte Topics:
       client.subscribe(P("/System/Zeit"));
       client.subscribe(P("/System/Datum"));
+      //HomeAssistant autodiscover configs
+      client.publish("homeassistant/sensor/Powerwall/Power/config", P("{\"name\":\"Powerwall Power\",\"obj_idd\":\"PowerwallPower\",\"uniq_id\":\"powerwall_power\",\"unit_of_meas\":\"W\",\"stat_t\":\"/Powerwall/Power\"}"), true);
+      client.publish("homeassistant/sensor/Powerwall/Voltage/config", P("{\"name\":\"Powerwall Voltage\",\"obj_idd\":\"PowerwallVoltage\",\"uniq_id\":\"powerwall_voltage\",\"unit_of_meas\":\"V\",\"stat_t\":\"/Powerwall/Voltage\"}"), true);
+      client.publish("homeassistant/sensor/Powerwall/Current/config", P("{\"name\":\"Powerwall Current\",\"obj_idd\":\"PowerwallCurrent\",\"uniq_id\":\"powerwall_current\",\"unit_of_meas\":\"A\",\"stat_t\":\"/Powerwall/Current\"}"), true);
+      client.publish("homeassistant/sensor/Powerwall/RemainCapacity/config", P("{\"name\":\"Powerwall Remain Capacity\",\"obj_idd\":\"PowerwallRemainCapacity\",\"uniq_id\":\"powerwall_remain_capacity\",\"unit_of_meas\":\"Ah\",\"stat_t\":\"/Powerwall/RemainCapacity\"}"), true);
+      client.publish("homeassistant/sensor/Powerwall/RSOC/config", P("{\"name\":\"Powerwall RSOC\",\"obj_idd\":\"PowerwallRSOC\",\"uniq_id\":\"powerwall_RSOC\",\"unit_of_meas\":\"%\",\"stat_t\":\"/Powerwall/RSOC\"}"), true);
+      client.publish("homeassistant/sensor/Powerwall/Temp1/config", P("{\"name\":\"Powerwall Temp1\",\"obj_idd\":\"PowerwallTemp1\",\"uniq_id\":\"powerwall_temp1\",\"unit_of_meas\":\"°C\",\"stat_t\":\"/Powerwall/Temp1\"}"), true);
+      client.publish("homeassistant/sensor/Powerwall/Temp2/config", P("{\"name\":\"Powerwall Temp2\",\"obj_idd\":\"PowerwallTemp2\",\"uniq_id\":\"powerwall_temp2\",\"unit_of_meas\":\"°C\",\"stat_t\":\"/Powerwall/Temp2\"}"), true);
+      client.publish("homeassistant/sensor/Powerwall/Cell1/config", P("{\"name\":\"Powerwall Cell1\",\"obj_idd\":\"PowerwallCell1\",\"uniq_id\":\"powerwall_cell1\",\"unit_of_meas\":\"V\",\"stat_t\":\"/Powerwall/Cell1\"}"), true);
+      client.publish("homeassistant/sensor/Powerwall/Cell2/config", P("{\"name\":\"Powerwall Cell2\",\"obj_idd\":\"PowerwallCell2\",\"uniq_id\":\"powerwall_cell2\",\"unit_of_meas\":\"V\",\"stat_t\":\"/Powerwall/Cell2\"}"), true);
+      client.publish("homeassistant/sensor/Powerwall/Cell3/config", P("{\"name\":\"Powerwall Cell3\",\"obj_idd\":\"PowerwallCell3\",\"uniq_id\":\"powerwall_cell3\",\"unit_of_meas\":\"V\",\"stat_t\":\"/Powerwall/Cell3\"}"), true);
+      client.publish("homeassistant/sensor/Powerwall/Cell4/config", P("{\"name\":\"Powerwall Cell4\",\"obj_idd\":\"PowerwallCell4\",\"uniq_id\":\"powerwall_cell4\",\"unit_of_meas\":\"V\",\"stat_t\":\"/Powerwall/Cell4\"}"), true);
+      client.publish("homeassistant/sensor/Powerwall/Cell5/config", P("{\"name\":\"Powerwall Cell5\",\"obj_idd\":\"PowerwallCell5\",\"uniq_id\":\"powerwall_cell5\",\"unit_of_meas\":\"V\",\"stat_t\":\"/Powerwall/Cell5\"}"), true);
+      client.publish("homeassistant/sensor/Powerwall/Cell6/config", P("{\"name\":\"Powerwall Cell6\",\"obj_idd\":\"PowerwallCell6\",\"uniq_id\":\"powerwall_cell6\",\"unit_of_meas\":\"V\",\"stat_t\":\"/Powerwall/Cell6\"}"), true);
+      client.publish("homeassistant/sensor/Powerwall/Cell7/config", P("{\"name\":\"Powerwall Cell7\",\"obj_idd\":\"PowerwallCell7\",\"uniq_id\":\"powerwall_cell7\",\"unit_of_meas\":\"V\",\"stat_t\":\"/Powerwall/Cell7\"}"), true);
+      client.publish("homeassistant/sensor/Powerwall/Cell8/config", P("{\"name\":\"Powerwall Cell8\",\"obj_idd\":\"PowerwallCell8\",\"uniq_id\":\"powerwall_cell8\",\"unit_of_meas\":\"V\",\"stat_t\":\"/Powerwall/Cell8\"}"), true);
+      client.publish("homeassistant/sensor/Powerwall/Cell9/config", P("{\"name\":\"Powerwall Cell9\",\"obj_idd\":\"PowerwallCell9\",\"uniq_id\":\"powerwall_cell9\",\"unit_of_meas\":\"V\",\"stat_t\":\"/Powerwall/Cell9\"}"), true);
+      client.publish("homeassistant/sensor/Powerwall/Cell10/config", P("{\"name\":\"Powerwall Cell10\",\"obj_idd\":\"PowerwallCell10\",\"uniq_id\":\"powerwall_cell10\",\"unit_of_meas\":\"V\",\"stat_t\":\"/Powerwall/Cell10\"}"), true);
+      client.publish("homeassistant/sensor/Powerwall/Cell11/config", P("{\"name\":\"Powerwall Cell11\",\"obj_idd\":\"PowerwallCell11\",\"uniq_id\":\"powerwall_cell11\",\"unit_of_meas\":\"V\",\"stat_t\":\"/Powerwall/Cell11\"}"), true);
+      client.publish("homeassistant/sensor/Powerwall/Cell12/config", P("{\"name\":\"Powerwall Cell12\",\"obj_idd\":\"PowerwallCell12\",\"uniq_id\":\"powerwall_cell12\",\"unit_of_meas\":\"V\",\"stat_t\":\"/Powerwall/Cell12\"}"), true);
+      client.publish("homeassistant/sensor/Powerwall/Cell13/config", P("{\"name\":\"Powerwall Cell13\",\"obj_idd\":\"PowerwallCell13\",\"uniq_id\":\"powerwall_cell13\",\"unit_of_meas\":\"V\",\"stat_t\":\"/Powerwall/Cell13\"}"), true);
+      client.publish("homeassistant/sensor/Powerwall/Cell14/config", P("{\"name\":\"Powerwall Cell14\",\"obj_idd\":\"PowerwallCell14\",\"uniq_id\":\"powerwall_cell14\",\"unit_of_meas\":\"V\",\"stat_t\":\"/Powerwall/Cell14\"}"), true);
+      
     }
   }
 }
