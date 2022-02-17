@@ -1,4 +1,5 @@
 # Smart-BMS-arduino-Reader
 
 
-Fork with Arduino Uno and Networkshild W5100 + SoftSerial for fhem/smarthome
+Fork with Arduino MEGA and Networkshild W5100
+lithiumbatterypcb.com
