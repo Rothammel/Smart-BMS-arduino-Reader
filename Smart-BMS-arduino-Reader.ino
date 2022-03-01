@@ -303,8 +303,8 @@ void loop()
   }
   if (PackCurrentf < 0)
   {
-    kWhOutDay = kWhOutDay + ((PackVoltagef * PackCurrentf) / 3600 / 1000);
-    kWhOut = kWhOut + ((PackVoltagef * PackCurrentf) / 3600 / 1000);
+    kWhOutDay = kWhOutDay + ((PackVoltagef * PackCurrentf * -1) / 3600 / 1000);
+    kWhOut = kWhOut + ((PackVoltagef * PackCurrentf * -1) / 3600 / 1000);
   }
   client.publish("/Powerwall/kWhInDay", dtostrf(kWhInDay, 1, 3, mqttBuffer), true);
   client.publish("/Powerwall/kWhOutDay", dtostrf(kWhOutDay, 1, 3, mqttBuffer), true);
