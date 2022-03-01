@@ -7,7 +7,8 @@ char StringBuffer[250];
 #include <PubSubClient.h>    //MQTT Bibliothek von Nick O'Leary
 #include <SPI.h>             //für w5100 im arduino "built in" enthalten
 #include <avr/wdt.h>         //Watchdog
-#include <TimeLib.h>         //Uhrzeit & Datum Library von Paul Stoffregen 
+#include <TimeLib.h>         //Uhrzeit & Datum Library von Paul Stoffregen
+#include <EEPROM.h>
 
 // ---- Konstanten ----
 byte mac[] = {0x62, 0x0F, 0xD9, 0x3D, 0x60, 0xAF};
@@ -28,6 +29,7 @@ uint8_t BYTE1, BYTE2, BYTE3, BYTE4, BYTE5, BYTE6, BYTE7, BYTE8, BYTE9, BYTE10;
 uint8_t inInts[40], data[9];   // an array to hold incoming data, not seen any longer than 34 bytes, or 9
 uint16_t a16bitvar;
 float CellMin = 5, CellMax = 0, Cellsum = 0;
+float kWhIn = 0, kWhOut = 0, AhIn = 0, kWhInDay = 0, kWhOutDay = 0;
 
 // ---- Timer ----
 unsigned long  vorMillisSensoren = 0;      // Polling Timer BMS
@@ -53,6 +55,11 @@ void setup()
   // Watchdog aktivieren, nicht unter 250ms, folgende timeout verwenden:
   // WDTO_1S, WDTO_2S, WDTO_4S, WDTO_8S
   wdt_enable(WDTO_8S);
+
+  // read and set kWh counter from eeprom
+  EEPROM.get(0, kWhIn);
+  EEPROM.get(0, kWhOut);
+  
 }
 
 void loop()
@@ -66,6 +73,18 @@ void loop()
   // MQTT loop
   client.loop();
 
+  // reset kWh day counter
+  if (hour() == 0 && minute() == 0 && second() == 1)
+  {
+     kWhInDay = 0, kWhOutDay = 0;
+  }
+
+  // write kWh counter to eeprom
+  if (hour() == 8 && minute() == 0 && second() == 1)
+  {
+    EEPROM.put (0, kWhIn);
+    EEPROM.put (4, kWhOut);
+  }
   // Aufgaben ein Mal pro Sekunde durchführen
   if(millis()-vorMillisSensoren > intervalSensoren)
   {
@@ -276,6 +295,21 @@ void loop()
   Serial.println(Mosfet_control);
   client.publish("/Powerwall/DisCharge", dtostrf(Mosfet_control, 1, 0, mqttBuffer), true);
 
+  //calculate kWh
+  if (PackCurrentf > 0)
+  {
+    kWhInDay = kWhInDay + ((PackVoltagef * PackCurrentf) / 3600 / 1000);
+    kWhIn = kWhIn + ((PackVoltagef * PackCurrentf) / 3600 / 1000);
+  }
+  if (PackCurrentf < 0)
+  {
+    kWhOutDay = kWhOutDay + ((PackVoltagef * PackCurrentf) / 3600 / 1000);
+    kWhOut = kWhOut + ((PackVoltagef * PackCurrentf) / 3600 / 1000);
+  }
+  client.publish("/Powerwall/kWhInDay", dtostrf(kWhInDay, 1, 3, mqttBuffer), true);
+  client.publish("/Powerwall/kWhOutDay", dtostrf(kWhOutDay, 1, 3, mqttBuffer), true);
+  client.publish("/Powerwall/kWhIn", dtostrf(kWhIn, 1, 3, mqttBuffer), true);
+  client.publish("/Powerwall/kWhOut", dtostrf(kWhOut, 1, 3, mqttBuffer), true);
   }
 }
 
@@ -440,7 +474,10 @@ void reconnect()
       client.publish("homeassistant/sensor/Powerwall/Cell12/config", P("{\"name\":\"Powerwall Cell12\",\"obj_idd\":\"PowerwallCell12\",\"uniq_id\":\"powerwall_cell12\",\"unit_of_meas\":\"V\",\"stat_t\":\"/Powerwall/Cell12\",\"dev_cla\":\"voltage\"}"), true);
       client.publish("homeassistant/sensor/Powerwall/Cell13/config", P("{\"name\":\"Powerwall Cell13\",\"obj_idd\":\"PowerwallCell13\",\"uniq_id\":\"powerwall_cell13\",\"unit_of_meas\":\"V\",\"stat_t\":\"/Powerwall/Cell13\",\"dev_cla\":\"voltage\"}"), true);
       client.publish("homeassistant/sensor/Powerwall/Cell14/config", P("{\"name\":\"Powerwall Cell14\",\"obj_idd\":\"PowerwallCell14\",\"uniq_id\":\"powerwall_cell14\",\"unit_of_meas\":\"V\",\"stat_t\":\"/Powerwall/Cell14\",\"dev_cla\":\"voltage\"}"), true);
-      
+      client.publish("homeassistant/sensor/Powerwall/kWhInDay/config", P("{\"name\":\"Powerwall kWh in day\",\"obj_idd\":\"PowerwallkWhInDay\",\"uniq_id\":\"powerwall_kWhinday\",\"unit_of_meas\":\"kWh\",\"stat_t\":\"/Powerwall/kWhInDay\",\"dev_cla\":\"energy\"}"), true);
+      client.publish("homeassistant/sensor/Powerwall/kWhOutDay/config", P("{\"name\":\"Powerwall kWh out day\",\"obj_idd\":\"PowerwallkWhOutDay\",\"uniq_id\":\"powerwall_kWhoutday\",\"unit_of_meas\":\"kWh\",\"stat_t\":\"/Powerwall/kWhOutDay\",\"dev_cla\":\"energy\"}"), true);
+      client.publish("homeassistant/sensor/Powerwall/kWhIn/config", P("{\"name\":\"Powerwall kWh in\",\"obj_idd\":\"PowerwallkWhIn\",\"uniq_id\":\"powerwall_kWhin\",\"unit_of_meas\":\"kWh\",\"stat_t\":\"/Powerwall/kWhIn\",\"stat_cla\":\"total\",\"dev_cla\":\"energy\"}"), true);
+      client.publish("homeassistant/sensor/Powerwall/kWhOut/config", P("{\"name\":\"Powerwall kWh out\",\"obj_idd\":\"PowerwallkWhOut\",\"uniq_id\":\"powerwall_kWhout\",\"unit_of_meas\":\"kWh\",\"stat_t\":\"/Powerwall/kWhOut\",\"stat_cla\":\"total\",\"dev_cla\":\"energy\"}"), true);
     }
   }
 }
