@@ -58,7 +58,7 @@ void setup()
 
   // read and set kWh counter from eeprom
   EEPROM.get(0, kWhIn);
-  EEPROM.get(0, kWhOut);
+  EEPROM.get(4, kWhOut);
   
 }
 
