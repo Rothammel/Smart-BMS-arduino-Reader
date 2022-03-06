@@ -74,7 +74,7 @@ void loop()
   client.loop();
 
   // reset kWh day counter
-  if (hour() == 0 && minute() == 0 && second() == 1)
+  if (hour() == 23 && minute() == 59 && second() == 59)
   {
      kWhInDay = 0, kWhOutDay = 0;
   }
@@ -226,6 +226,7 @@ void loop()
   Serial.print(F("Pack Voltage = "));
   Serial.print(PackVoltagef);
   client.publish("/Powerwall/Voltage", dtostrf(PackVoltagef, 1, 2, mqttBuffer), true);
+  if (PackVoltagef < 46) Ah = 0;
 
 
   // CURRENT
