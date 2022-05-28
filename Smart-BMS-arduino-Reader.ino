@@ -30,6 +30,20 @@ uint8_t inInts[40], data[9];   // an array to hold incoming data, not seen any l
 uint16_t a16bitvar;
 float CellMin = 5, CellMax = 0, Cellsum = 0;
 float kWhIn = 0, kWhOut = 0, Ah = 0, kWhInDay = 0, kWhOutDay = 0;
+// Soyosource grit tie stuff
+int maxSoyoOutput = 500; //edit this to limit TOTAL power output in watts (not individual unit output)
+// -- Serial data --
+byte byte0 = 36;
+byte byte1 = 86;
+byte byte2 = 0;
+byte byte3 = 33;
+byte byte4 = 0; //(2 byte watts as short integer xaxb)
+byte byte5 = 0; //(2 byte watts as short integer xaxb)
+byte byte6 = 128;
+byte byte7 = 8; // checksum
+byte serialpacket[8];
+int L2SMLPower = 0; //amount of electricity being imported from grid on L2
+int L2demand = 0;   //current power inverter should deliver (default to zero)
 
 // ---- Timer ----
 unsigned long  vorMillisSensoren = 0;      // Polling Timer BMS
@@ -43,8 +57,10 @@ PubSubClient client(ethClient);
 
 void setup()
 {
-  Serial.begin(115200);    // will be sending all data to serial, for later analysis
-  Serial1.begin(9600);  // set the data rate for the MySerial port
+  Serial.begin(115200);    // debug serial
+  Serial1.begin(9600);     // BMS serial
+  Serial2.begin(4800);     // RS485 serial
+
   client.setServer(server, 1883); // Adresse des MQTT-Brokers
   client.setCallback(callback);   // Handler für eingehende Nachrichten
   client.setBufferSize(512);      // increase MQTT buffer for Home Asssistant auto discover
@@ -59,6 +75,16 @@ void setup()
   // read and set kWh counter from eeprom
   EEPROM.get(0, kWhIn);
   EEPROM.get(4, kWhOut);
+
+  // set soyosource array
+  serialpacket[0]=byte0;
+  serialpacket[1]=byte1;
+  serialpacket[2]=byte2;
+  serialpacket[3]=byte3;
+  serialpacket[4]=byte4;
+  serialpacket[5]=byte5;
+  serialpacket[6]=byte6;
+  serialpacket[7]=byte7;
   
 }
 
@@ -90,124 +116,124 @@ void loop()
   {
     vorMillisSensoren = millis();
 
-  //CCCCCCCCCCCCCCCCCCCCCCC  CELLS VOLTAGE  CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
+    //CCCCCCCCCCCCCCCCCCCCCCC  CELLS VOLTAGE  CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
 
-  //CELLS VOLTAGE 04
-  call_get_cells_v();      // requests cells voltage
-  get_bms_feedback();     // returns with up to date, inString= chars, inInts[]= numbers, chksum in last 2 bytes
-  //                       Length (length of data string)
-  //  got cell voltages, bytes 0 and 1, its 16 bit, high and low
-  //  go through and print them
-  // Length = Length - 2;
-  Serial.println ("");
-  // print headings
-  for (int i = 2; i < (Length + 1); i = i + 2) {
-    Serial.print (F(" Cell "));
-    Serial.print (i / 2);
-    Serial.print(F("  "));
+    //CELLS VOLTAGE 04
+    call_get_cells_v();      // requests cells voltage
+    get_bms_feedback();     // returns with up to date, inString= chars, inInts[]= numbers, chksum in last 2 bytes
+    //                       Length (length of data string)
+    //  got cell voltages, bytes 0 and 1, its 16 bit, high and low
+    //  go through and print them
+    // Length = Length - 2;
+//    Serial.println ("");
+    // print headings
+    // for (int i = 2; i < (Length + 1); i = i + 2) {
+    //   Serial.print (F(" Cell "));
+    //   Serial.print (i / 2);
+    //   Serial.print(F("  "));
+    // }
+
+    // Serial.print (F(" CellMax ")); // CellMax heading
+    // Serial.print(F("  "));
+
+    // Serial.print (F(" CellMin ")); // CellMin heading
+    // Serial.print(F("  "));
+
+    // Serial.print (F(" Diff ")); // diference heading
+    // Serial.print(F("  "));
+
+    // Serial.print (F("  Avg ")); // Average heading
+    // Serial.print(F("  "));
+
+    // // and the values
+    // Serial.println ("");
+    for (int i = 0; i < Length; i = i + 2) {
+      highbyte = (inInts[i]);
+      lowbyte = (inInts[i + 1]);
+      uint16_t Cellnow = two_ints_into16(highbyte, lowbyte);
+      float Cellnowf = Cellnow / 1000.0f; // convert to float
+      Cellsum = Cellsum + Cellnowf;
+      if (Cellnowf > CellMax) {   // get high and low
+        CellMax = Cellnowf;
+      }
+      if (Cellnowf < CellMin) {
+        CellMin = Cellnowf;
+      }
+      // Serial.print(F(" "));
+      // Serial.print(Cellnowf, 3); // 3 decimal places
+      
+      // Serial.print(i);
+      // Serial.print(F("   "));
+      // todo switch optimieren, topic mit i variable erstellen
+      switch (i)
+      {
+        case 0:
+          client.publish("/Powerwall/Cell1", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
+          break;
+        case 2:
+          client.publish("/Powerwall/Cell2", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
+          break;
+        case 4:
+          client.publish("/Powerwall/Cell3", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
+          break;
+        case 6:
+          client.publish("/Powerwall/Cell4", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
+          break;
+        case 8:
+          client.publish("/Powerwall/Cell5", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
+          break;
+        case 10:
+          client.publish("/Powerwall/Cell6", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
+          break;
+        case 12:
+          client.publish("/Powerwall/Cell7", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
+          break;
+        case 14:
+          client.publish("/Powerwall/Cell8", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
+          break;
+        case 16:
+          client.publish("/Powerwall/Cell9", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
+          break;
+        case 18:
+          client.publish("/Powerwall/Cell10", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
+          break;
+        case 20:
+          client.publish("/Powerwall/Cell11", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
+          break;
+        case 22:
+          client.publish("/Powerwall/Cell12", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
+          break;
+        case 24:
+          client.publish("/Powerwall/Cell13", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
+          break;
+        case 26:
+          client.publish("/Powerwall/Cell14", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
+          break;
+      }
   }
 
-  Serial.print (F(" CellMax ")); // CellMax heading
-  Serial.print(F("  "));
-
-  Serial.print (F(" CellMin ")); // CellMin heading
-  Serial.print(F("  "));
-
-  Serial.print (F(" Diff ")); // diference heading
-  Serial.print(F("  "));
-
-  Serial.print (F("  Avg ")); // Average heading
-  Serial.print(F("  "));
-
-  // and the values
-  Serial.println ("");
-  for (int i = 0; i < Length; i = i + 2) {
-    highbyte = (inInts[i]);
-    lowbyte = (inInts[i + 1]);
-    uint16_t Cellnow = two_ints_into16(highbyte, lowbyte);
-    float Cellnowf = Cellnow / 1000.0f; // convert to float
-    Cellsum = Cellsum + Cellnowf;
-    if (Cellnowf > CellMax) {   // get high and low
-      CellMax = Cellnowf;
-    }
-    if (Cellnowf < CellMin) {
-      CellMin = Cellnowf;
-    }
-    Serial.print(F(" "));
-    Serial.print(Cellnowf, 3); // 3 decimal places
-    
-    Serial.print(i);
-    Serial.print(F("   "));
-    // todo switch optimieren, topic mit i variable erstellen
-    switch (i)
-    {
-      case 0:
-        client.publish("/Powerwall/Cell1", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
-        break;
-      case 2:
-        client.publish("/Powerwall/Cell2", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
-        break;
-      case 4:
-        client.publish("/Powerwall/Cell3", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
-        break;
-      case 6:
-        client.publish("/Powerwall/Cell4", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
-        break;
-      case 8:
-        client.publish("/Powerwall/Cell5", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
-        break;
-      case 10:
-        client.publish("/Powerwall/Cell6", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
-        break;
-      case 12:
-        client.publish("/Powerwall/Cell7", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
-        break;
-      case 14:
-        client.publish("/Powerwall/Cell8", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
-        break;
-      case 16:
-        client.publish("/Powerwall/Cell9", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
-        break;
-      case 18:
-        client.publish("/Powerwall/Cell10", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
-        break;
-      case 20:
-        client.publish("/Powerwall/Cell11", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
-        break;
-      case 22:
-        client.publish("/Powerwall/Cell12", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
-        break;
-      case 24:
-        client.publish("/Powerwall/Cell13", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
-        break;
-      case 26:
-        client.publish("/Powerwall/Cell14", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
-        break;
-    }
-  }
-
-  Serial.print(F(" "));
-  Serial.print(CellMax, 3); // 3 decimal places
-  Serial.print(F("   "));
+  // Serial.print(F(" "));
+  // Serial.print(CellMax, 3); // 3 decimal places
+  // Serial.print(F("   "));
   client.publish("/Powerwall/CellMax", dtostrf(CellMax, 1, 2, mqttBuffer), true);
 
-  Serial.print(F("   "));
-  Serial.print(CellMin, 3); // 3 decimal places
-  Serial.print(F("   "));
+  // Serial.print(F("   "));
+  // Serial.print(CellMin, 3); // 3 decimal places
+  // Serial.print(F("   "));
   client.publish("/Powerwall/CellMin", dtostrf(CellMin, 1, 2, mqttBuffer), true);
 
 
   float Celldiff = CellMax - CellMin; // difference between highest and lowest
-  Serial.print(F("   "));
-  Serial.print(Celldiff, 3); // 3 decimal places
-  Serial.print(F("   "));
+  // Serial.print(F("   "));
+  // Serial.print(Celldiff, 3); // 3 decimal places
+  // Serial.print(F("   "));
   client.publish("/Powerwall/CellDiff", dtostrf(Celldiff, 1, 2, mqttBuffer), true);
 
 
   Cellsum = Cellsum / (Length / 2); // Average of Cells
-  Serial.print(F(" "));
-  Serial.print(Cellsum, 3); // 3 decimal places
-  Serial.print(F("   "));
+  // Serial.print(F(" "));
+  // Serial.print(Cellsum, 3); // 3 decimal places
+  // Serial.print(F("   "));
   client.publish("/Powerwall/CellAverage", dtostrf(Cellsum, 1, 2, mqttBuffer), true);
 
 
@@ -223,8 +249,8 @@ void loop()
   lowbyte = (inInts[1]);
   uint16_t PackVoltage = two_ints_into16(highbyte, lowbyte);
   float PackVoltagef = PackVoltage / 100.0f; // convert to float and leave at 2 dec places
-  Serial.print(F("Pack Voltage = "));
-  Serial.print(PackVoltagef);
+  // Serial.print(F("Pack Voltage = "));
+  // Serial.print(PackVoltagef);
   client.publish("/Powerwall/Voltage", dtostrf(PackVoltagef, 1, 2, mqttBuffer), true);
   if (PackVoltagef < 46) Ah = 0;
 
@@ -235,8 +261,8 @@ void loop()
   int PackCurrent = two_ints_into16(highbyte, lowbyte);
  // uint16_t PackCurrent = two_ints_into16(highbyte, lowbyte);
   float PackCurrentf = PackCurrent / 100.0f; // convert to float and leave at 2 dec places
-  Serial.print(F("   Current = "));
-  Serial.print(PackCurrentf);
+  // Serial.print(F("   Current = "));
+  // Serial.print(PackCurrentf);
   client.publish("/Powerwall/Current", dtostrf(PackCurrentf, 1, 2, mqttBuffer), true);
   client.publish("/Powerwall/Power", dtostrf(PackCurrentf * PackVoltagef, 1, 2, mqttBuffer), true);
 
@@ -246,16 +272,16 @@ void loop()
   lowbyte = (inInts[5]);
   uint16_t RemainCapacity = two_ints_into16(highbyte, lowbyte);
   float RemainCapacityf = RemainCapacity / 100.0f; // convert to float and leave at 2 dec places
-  Serial.print(F("   Remaining Capacity = "));
-  Serial.print(RemainCapacityf);
-  Serial.print(F("Ah"));
+  // Serial.print(F("   Remaining Capacity = "));
+  // Serial.print(RemainCapacityf);
+  // Serial.print(F("Ah"));
   client.publish("/Powerwall/RemainCapacity", dtostrf(RemainCapacityf, 1, 2, mqttBuffer), true);
 
   //RSOC
   int RSOC = (inInts[19]);
-  Serial.print(F("   RSOC = "));
-  Serial.print(RSOC);
-  Serial.print(F("%"));
+  // Serial.print(F("   RSOC = "));
+  // Serial.print(RSOC);
+  // Serial.print(F("%"));
   client.publish("/Powerwall/RSOC", dtostrf(RSOC, 1, 0, mqttBuffer), true);
 
 
@@ -264,10 +290,10 @@ void loop()
   lowbyte = (inInts[24]);
   float Temp_probe_1 = two_ints_into16(highbyte, lowbyte);
   float Temp_probe_1f = (Temp_probe_1 - 2731) / 10.00f; // convert to float and leave at 2 dec places
-  Serial.println("");
-  Serial.print(F("Temp probe 1 = "));
-  Serial.print(Temp_probe_1f);
-  Serial.print(" ");
+  // Serial.println("");
+  // Serial.print(F("Temp probe 1 = "));
+  // Serial.print(Temp_probe_1f);
+  // Serial.print(" ");
   client.publish("/Powerwall/Temp1", dtostrf(Temp_probe_1f, 1, 2, mqttBuffer), true);
 
 
@@ -276,24 +302,24 @@ void loop()
   lowbyte = (inInts[26]);
   float Temp_probe_2 = two_ints_into16(highbyte, lowbyte);
   float Temp_probe_2f = (Temp_probe_2 - 2731) / 10.00f; // convert to float and leave at 2 dec places
-  Serial.print(F("   Temp probe 2 = "));
-  Serial.print(Temp_probe_2f);
-  Serial.println("");
+  // Serial.print(F("   Temp probe 2 = "));
+  // Serial.print(Temp_probe_2f);
+  // Serial.println("");
   client.publish("/Powerwall/Temp2", dtostrf(Temp_probe_2f, 1, 2, mqttBuffer), true);
 
 
   // Show the state of MOSFET control
-  Serial.println("");
-  Serial.print(F("Mosfet Charge = "));
+  // Serial.println("");
+  // Serial.print(F("Mosfet Charge = "));
   Mosfet_control = (inInts[20]);
   Mosfet_control = Mosfet_control & 1; //& (bitwise and) just want bit 0
-  Serial.print(Mosfet_control);
+  // Serial.print(Mosfet_control);
   client.publish("/Powerwall/Charge", dtostrf(Mosfet_control, 1, 0, mqttBuffer), true);
 
-  Serial.print(F("  Mosfet DisCharge = "));
+  // Serial.print(F("  Mosfet DisCharge = "));
   mosfetnow = mosfetnow >> 1; //>> (bitshift right) use variabe mosfetnow, move bit 1 to bit 0
   Mosfet_control = mosfetnow & 1; //& (bitwise and) just want bit 0 again
-  Serial.println(Mosfet_control);
+  // Serial.println(Mosfet_control);
   client.publish("/Powerwall/DisCharge", dtostrf(Mosfet_control, 1, 0, mqttBuffer), true);
 
   //calculate kWh
@@ -314,7 +340,24 @@ void loop()
   client.publish("/Powerwall/kWhIn", dtostrf(kWhIn, 1, 3, mqttBuffer), true);
   client.publish("/Powerwall/kWhOut", dtostrf(kWhOut, 1, 3, mqttBuffer), true);
   client.publish("/Powerwall/Ah", dtostrf(Ah, 1, 3, mqttBuffer), true);
-  }
+
+  // -- Compute serial packet and send it to inverter (just the 3 bytes that change) --
+  byte4 = int(L2demand/256); // (2 byte watts as short integer xaxb)
+  if (byte4 < 0 or byte4 > 256){
+      byte4 = 0;}
+  byte5 = int(L2demand)-(byte4 * 256); // (2 byte watts as short integer xaxb)
+  if (byte5 < 0 or byte5 > 256) {
+      byte5 = 0;}
+  byte7 = (264 - byte4 - byte5); //checksum calculation
+  if (byte7 > 256){
+      byte7 = 8;}
+
+  serialpacket[4]=byte4;
+  serialpacket[5]=byte5;
+  serialpacket[7]=byte7;
+  Serial.write(serialpacket,8);
+
+  } // 1sec loop
 }
 
 //------------------------------------------------------------------------------------------
@@ -426,10 +469,21 @@ void callback(char* topic, byte* payload, unsigned int length)
     message_buff[i] = payload[i];
   }
   message_buff[i] = '\0';
- 
+  // wenn topic /SmartMeter/L2 empfangen wurde
+  if (String(topic)=="/SmartMeter/L2")
+  {
+    L2SMLPower = atoi(message_buff);
+    // -- Compute L2demand signal --
+    //todo: negative Werte besser auswerten
+    //damit nicht so viel aus dem Netz bezogen wird
+    L2demand = L2demand + L2SMLPower + 5; //add grid import to current L2demand and add few watts
+    if (L2demand >= maxSoyoOutput) L2demand = maxSoyoOutput;
+    else if (L2demand <= 0) L2demand = 0;
+  }
 
   // wenn topic /System/Zeit empfangen dann String zerlegen und Variablen füllen 
-  if (String(topic)=="/System/Zeit"){
+  if (String(topic)=="/System/Zeit")
+  {
     Stunde=String(message_buff).substring(0,2).toInt();
     Minute=String(message_buff).substring(2,4).toInt();
     Sekunde=String(message_buff).substring(4,6).toInt();
@@ -456,6 +510,7 @@ void reconnect()
       // Abonierte Topics:
       client.subscribe(P("/System/Zeit"));
       client.subscribe(P("/System/Datum"));
+      client.subscribe(P("/SmartMeter/L2"));
       //HomeAssistant autodiscover configs
       client.publish("homeassistant/sensor/Powerwall/Power/config", P("{\"name\":\"Powerwall Power\",\"obj_idd\":\"PowerwallPower\",\"uniq_id\":\"powerwall_power\",\"unit_of_meas\":\"W\",\"stat_t\":\"/Powerwall/Power\",\"dev_cla\":\"power\"}"), true);
       client.publish("homeassistant/sensor/Powerwall/Voltage/config", P("{\"name\":\"Powerwall Voltage\",\"obj_idd\":\"PowerwallVoltage\",\"uniq_id\":\"powerwall_voltage\",\"unit_of_meas\":\"V\",\"stat_t\":\"/Powerwall/Voltage\",\"dev_cla\":\"voltage\"}"), true);
