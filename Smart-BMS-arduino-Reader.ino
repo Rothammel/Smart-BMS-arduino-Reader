@@ -14,6 +14,7 @@ char StringBuffer[250];
 byte mac[] = {0x62, 0x0F, 0xD9, 0x3D, 0x60, 0xAF};
 const IPAddress ip(192, 168, 0, 122);
 const IPAddress server(192, 168, 0, 5);             // MQTT Server IP Adresse lokal
+const float maxCellVoltage = 4.05;
 
 
 // ---- Variablen ----
@@ -29,9 +30,12 @@ uint8_t BYTE1, BYTE2, BYTE3, BYTE4, BYTE5, BYTE6, BYTE7, BYTE8, BYTE9, BYTE10;
 uint8_t inInts[40], data[9];   // an array to hold incoming data, not seen any longer than 34 bytes, or 9
 uint16_t a16bitvar;
 float CellMin = 5, CellMax = 0, Cellsum = 0;
+float Cell01, Cell02, Cell03, Cell04, Cell05, Cell06, Cell07, Cell08, Cell09, Cell10, Cell11, Cell12, Cell13, Cell14;
+float PowerInBat;
 float kWhIn = 0, kWhOut = 0, Ah = 0, kWhInDay = 0, kWhOutDay = 0;
 // Soyosource grit tie stuff
-int maxSoyoOutput = 500; //edit this to limit TOTAL power output in watts (not individual unit output)
+int maxSoyoOutput = 900; //edit this to limit TOTAL power output in watts (not individual unit output)
+int L2demandCalc;
 // -- Serial data --
 byte byte0 = 36;
 byte byte1 = 86;
@@ -100,7 +104,7 @@ void loop()
   client.loop();
 
   // reset kWh day counter
-  if (hour() == 23 && minute() == 59 && second() == 59)
+  if (hour() == 23 && minute() == 59 && second() > 55 && second() < 59 )
   {
      kWhInDay = 0, kWhOutDay = 0;
   }
@@ -169,45 +173,59 @@ void loop()
       {
         case 0:
           client.publish("/Powerwall/Cell1", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
+          Cell01 = Cellnowf;
           break;
         case 2:
           client.publish("/Powerwall/Cell2", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
+          Cell02 = Cellnowf;
           break;
         case 4:
           client.publish("/Powerwall/Cell3", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
+          Cell03 = Cellnowf;
           break;
         case 6:
           client.publish("/Powerwall/Cell4", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
+          Cell04 = Cellnowf;
           break;
         case 8:
           client.publish("/Powerwall/Cell5", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
+          Cell05 = Cellnowf;
           break;
         case 10:
           client.publish("/Powerwall/Cell6", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
+          Cell06 = Cellnowf;
           break;
         case 12:
           client.publish("/Powerwall/Cell7", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
+          Cell07 = Cellnowf;
           break;
         case 14:
           client.publish("/Powerwall/Cell8", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
+          Cell08 = Cellnowf;
           break;
         case 16:
           client.publish("/Powerwall/Cell9", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
+          Cell09 = Cellnowf;
           break;
         case 18:
           client.publish("/Powerwall/Cell10", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
+          Cell10 = Cellnowf;
           break;
         case 20:
           client.publish("/Powerwall/Cell11", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
+          Cell11 = Cellnowf;
           break;
         case 22:
           client.publish("/Powerwall/Cell12", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
+          Cell12 = Cellnowf;
           break;
         case 24:
           client.publish("/Powerwall/Cell13", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
+          Cell13 = Cellnowf;
           break;
         case 26:
           client.publish("/Powerwall/Cell14", dtostrf(Cellnowf, 1, 2, mqttBuffer), true);
+          Cell14 = Cellnowf;
           break;
       }
   }
@@ -264,7 +282,9 @@ void loop()
   // Serial.print(F("   Current = "));
   // Serial.print(PackCurrentf);
   client.publish("/Powerwall/Current", dtostrf(PackCurrentf, 1, 2, mqttBuffer), true);
-  client.publish("/Powerwall/Power", dtostrf(PackCurrentf * PackVoltagef, 1, 2, mqttBuffer), true);
+  PowerInBat = PackCurrentf * PackVoltagef;
+  client.publish("/Powerwall/Power", dtostrf(PowerInBat, 1, 2, mqttBuffer), true);
+  
 
 
   //REMAINING CAPACITY
@@ -341,6 +361,22 @@ void loop()
   client.publish("/Powerwall/kWhOut", dtostrf(kWhOut, 1, 3, mqttBuffer), true);
   client.publish("/Powerwall/Ah", dtostrf(Ah, 1, 3, mqttBuffer), true);
 
+  // put to much energy to grid, when batt is full
+  if (Cell01 > maxCellVoltage || Cell02 > maxCellVoltage || Cell03 > maxCellVoltage || Cell04 > maxCellVoltage || Cell05 > maxCellVoltage || Cell06 > maxCellVoltage || Cell07 > maxCellVoltage || Cell08 > maxCellVoltage || Cell09 > maxCellVoltage || Cell10 > maxCellVoltage || Cell11 > maxCellVoltage || Cell12 > maxCellVoltage || Cell13 > maxCellVoltage || Cell14 > maxCellVoltage)
+  {
+    L2demandCalc += 50;
+    if(L2demandCalc > 3000) L2demandCalc = 3000;
+  }
+  else
+  {
+    L2demandCalc -= 50;
+    if(L2demandCalc < 0) L2demandCalc = 0;
+  }
+  
+  L2demand += L2demandCalc;
+  if (L2demand >= maxSoyoOutput) L2demand = maxSoyoOutput;
+  else if (L2demand <= 0) L2demand = 0;
+  
   // -- Compute serial packet and send it to inverter (just the 3 bytes that change) --
   byte4 = int(L2demand/256); // (2 byte watts as short integer xaxb)
   if (byte4 < 0 or byte4 > 256){
@@ -355,7 +391,7 @@ void loop()
   serialpacket[4]=byte4;
   serialpacket[5]=byte5;
   serialpacket[7]=byte7;
-  Serial.write(serialpacket,8);
+  Serial2.write(serialpacket,8);
 
   } // 1sec loop
 }
@@ -477,8 +513,6 @@ void callback(char* topic, byte* payload, unsigned int length)
     //todo: negative Werte besser auswerten
     //damit nicht so viel aus dem Netz bezogen wird
     L2demand = L2demand + L2SMLPower + 5; //add grid import to current L2demand and add few watts
-    if (L2demand >= maxSoyoOutput) L2demand = maxSoyoOutput;
-    else if (L2demand <= 0) L2demand = 0;
   }
 
   // wenn topic /System/Zeit empfangen dann String zerlegen und Variablen füllen 
