@@ -369,13 +369,15 @@ void loop()
   }
   else
   {
-    L2demandCalc -= 50;
+    L2demandCalc -= 10;
     if(L2demandCalc < 0) L2demandCalc = 0;
   }
   
   L2demand += L2demandCalc;
   if (L2demand >= maxSoyoOutput) L2demand = maxSoyoOutput;
   else if (L2demand <= 0) L2demand = 0;
+  client.publish("/Powerwall/L2Delivery", dtostrf(L2demand, 1, 0, mqttBuffer), true);
+
   
   // -- Compute serial packet and send it to inverter (just the 3 bytes that change) --
   byte4 = int(L2demand/256); // (2 byte watts as short integer xaxb)
@@ -572,6 +574,7 @@ void reconnect()
       client.publish("homeassistant/sensor/Powerwall/kWhIn/config", P("{\"name\":\"Powerwall kWh in\",\"obj_idd\":\"PowerwallkWhIn\",\"uniq_id\":\"powerwall_kWhin\",\"unit_of_meas\":\"kWh\",\"stat_t\":\"/Powerwall/kWhIn\",\"stat_cla\":\"total\",\"dev_cla\":\"energy\"}"), true);
       client.publish("homeassistant/sensor/Powerwall/kWhOut/config", P("{\"name\":\"Powerwall kWh out\",\"obj_idd\":\"PowerwallkWhOut\",\"uniq_id\":\"powerwall_kWhout\",\"unit_of_meas\":\"kWh\",\"stat_t\":\"/Powerwall/kWhOut\",\"stat_cla\":\"total\",\"dev_cla\":\"energy\"}"), true);
       client.publish("homeassistant/sensor/Powerwall/Ah/config", P("{\"name\":\"Powerwall Ah\",\"obj_idd\":\"PowerwallAh\",\"uniq_id\":\"powerwall_ah\",\"unit_of_meas\":\"Ah\",\"stat_t\":\"/Powerwall/Ah\",\"dev_cla\":\"energy\"}"), true);
+      client.publish("homeassistant/sensor/Powerwall/L2Delivery/config", P("{\"name\":\"Powerwall L2 delivery\",\"obj_idd\":\"PowerwallL2Delivery\",\"uniq_id\":\"powerwall_l2_delivery\",\"unit_of_meas\":\"W\",\"stat_t\":\"/Powerwall/L2Delivery\",\"dev_cla\":\"power\"}"), true);
     }
   }
 }
