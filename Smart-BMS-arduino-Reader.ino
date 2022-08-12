@@ -34,7 +34,7 @@ float Cell01, Cell02, Cell03, Cell04, Cell05, Cell06, Cell07, Cell08, Cell09, Ce
 float PowerInBat;
 float kWhIn = 0, kWhOut = 0, Ah = 0, kWhInDay = 0, kWhOutDay = 0;
 // Soyosource grit tie stuff
-int maxSoyoOutput = 900; //edit this to limit TOTAL power output in watts (not individual unit output)
+int maxSoyoOutputL2 = 900; //edit this to limit TOTAL power output in watts (not individual unit output)
 int L2demandCalc;
 // -- Serial data --
 byte byte0 = 36;
@@ -54,6 +54,9 @@ unsigned long  vorMillisSensoren = 0;      // Polling Timer BMS
 const long     intervalSensoren  = 1000;
 unsigned long vorMillisReconnect = 100000; // nur alle 100s einen reconnect versuchen
 const long    intervalReconnect  = 100000;
+//unsigned long  timeLastL1Message = 0;
+unsigned long  timeLastL2Message = 0;
+//unsigned long  timeLastL3Message = 0;
 
 EthernetClient ethClient;
 PubSubClient client(ethClient);
@@ -64,6 +67,7 @@ void setup()
   Serial.begin(115200);    // debug serial
   Serial1.begin(9600);     // BMS serial
   Serial2.begin(4800);     // RS485 serial
+  Serial.println("BMS auslesen");
 
   client.setServer(server, 1883); // Adresse des MQTT-Brokers
   client.setCallback(callback);   // Handler für eingehende Nachrichten
@@ -71,7 +75,6 @@ void setup()
   
   // Ethernet-Verbindung aufbauen
   Ethernet.begin(mac, ip);
-  
   // Watchdog aktivieren, nicht unter 250ms, folgende timeout verwenden:
   // WDTO_1S, WDTO_2S, WDTO_4S, WDTO_8S
   wdt_enable(WDTO_8S);
@@ -361,20 +364,25 @@ void loop()
   client.publish("/Powerwall/kWhOut", dtostrf(kWhOut, 1, 3, mqttBuffer), true);
   client.publish("/Powerwall/Ah", dtostrf(Ah, 1, 3, mqttBuffer), true);
 
-  // put to much energy to grid, when batt is full
+  if (millis() - timeLastL2Message > 10000)
+  {
+    // timeout mqtt set L2demand to 0
+    L2demand = 0;
+    client.publish("/Powerwall/error", "timeout L2 subscribe, L2 delivery stopped", false);
+  }
+  // put to much incomming solar energy to grid, when batt is full
   if (Cell01 > maxCellVoltage || Cell02 > maxCellVoltage || Cell03 > maxCellVoltage || Cell04 > maxCellVoltage || Cell05 > maxCellVoltage || Cell06 > maxCellVoltage || Cell07 > maxCellVoltage || Cell08 > maxCellVoltage || Cell09 > maxCellVoltage || Cell10 > maxCellVoltage || Cell11 > maxCellVoltage || Cell12 > maxCellVoltage || Cell13 > maxCellVoltage || Cell14 > maxCellVoltage)
   {
     L2demandCalc += 50;
-    if(L2demandCalc > 3000) L2demandCalc = 3000;
+    if(L2demandCalc > maxSoyoOutputL2) L2demandCalc = maxSoyoOutputL2;
   }
   else
   {
     L2demandCalc -= 10;
     if(L2demandCalc < 0) L2demandCalc = 0;
   }
-  
   L2demand += L2demandCalc;
-  if (L2demand >= maxSoyoOutput) L2demand = maxSoyoOutput;
+  if (L2demand >= maxSoyoOutputL2) L2demand = maxSoyoOutputL2;
   else if (L2demand <= 0) L2demand = 0;
   client.publish("/Powerwall/L2Delivery", dtostrf(L2demand, 1, 0, mqttBuffer), true);
 
@@ -510,10 +518,9 @@ void callback(char* topic, byte* payload, unsigned int length)
   // wenn topic /SmartMeter/L2 empfangen wurde
   if (String(topic)=="/SmartMeter/L2")
   {
+    timeLastL2Message = millis();
     L2SMLPower = atoi(message_buff);
-    // -- Compute L2demand signal --
-    //todo: negative Werte besser auswerten
-    //damit nicht so viel aus dem Netz bezogen wird
+    if (L2SMLPower < 0) L2SMLPower = L2SMLPower / 2;
     L2demand = L2demand + L2SMLPower + 5; //add grid import to current L2demand and add few watts
   }
 
@@ -536,13 +543,15 @@ void callback(char* topic, byte* payload, unsigned int length)
 
 void reconnect()
 {
-  if(millis()-vorMillisReconnect > intervalReconnect)
+  if(millis() - vorMillisReconnect > intervalReconnect)
   {
     vorMillisReconnect = millis();
-
+    Serial.println("versuche mqtt reconnect!");
+    
     //Verbindungsversuch:
     if (client.connect("Powerwall","Stan","rotweiss"))
     {
+      Serial.println("mqtt verbunden!");
       // Abonierte Topics:
       client.subscribe(P("/System/Zeit"));
       client.subscribe(P("/System/Datum"));
