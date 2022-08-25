@@ -32,9 +32,12 @@ uint16_t a16bitvar;
 float CellMin = 5, CellMax = 0, Cellsum = 0;
 float Cell01, Cell02, Cell03, Cell04, Cell05, Cell06, Cell07, Cell08, Cell09, Cell10, Cell11, Cell12, Cell13, Cell14;
 float PowerInBat;
-float kWhIn = 0, kWhOut = 0, Ah = 0, kWhInDay = 0, kWhOutDay = 0;
+float kWhIn = 0, kWhOut = 0, Ah = 0, kWhInDay = 0, kWhOutDay = 0, kWhL1delivered = 0, kWhL2delivered = 0, kWhL3delivered = 0;
 // Soyosource grit tie stuff
-int maxSoyoOutputL2 = 900; //edit this to limit TOTAL power output in watts (not individual unit output)
+const int   maxSoyoOutputL1 = 0;
+const int   maxSoyoOutputL2 = 900;
+const int   maxSoyoOutputL3 = 0;
+const float lowVoltageCutoff = 46.8;
 int L2demandCalc;
 // -- Serial data --
 byte byte0 = 36;
@@ -80,8 +83,11 @@ void setup()
   wdt_enable(WDTO_8S);
 
   // read and set kWh counter from eeprom
-  EEPROM.get(0, kWhIn);
-  EEPROM.get(4, kWhOut);
+  EEPROM.get(0,  kWhIn);
+  EEPROM.get(4,  kWhOut);
+  //EEPROM.get(8,  kWhL1delivered);
+  EEPROM.get(12, kWhL2delivered);
+  //EEPROM.get(16, kWhL3delivered);
 
   // set soyosource array
   serialpacket[0]=byte0;
@@ -92,7 +98,9 @@ void setup()
   serialpacket[5]=byte5;
   serialpacket[6]=byte6;
   serialpacket[7]=byte7;
-  
+
+   //EEPROM.put (0, 676.47);
+   //EEPROM.put (4, 702.03);
 }
 
 void loop()
@@ -115,15 +123,16 @@ void loop()
   // write kWh counter to eeprom
   if (hour() == 8 && minute() == 0 && second() == 1)
   {
-    EEPROM.put (0, kWhIn);
-    EEPROM.put (4, kWhOut);
+    EEPROM.put (0,  kWhIn);
+    EEPROM.put (4,  kWhOut);
+    //EEPROM.put (8,  kWhL1delivered);
+    EEPROM.put (12, kWhL2delivered);
+    //EEPROM.put (16, kWhL3delivered);
   }
   // Aufgaben ein Mal pro Sekunde durchführen
   if(millis()-vorMillisSensoren > intervalSensoren)
   {
     vorMillisSensoren = millis();
-
-    //CCCCCCCCCCCCCCCCCCCCCCC  CELLS VOLTAGE  CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
 
     //CELLS VOLTAGE 04
     call_get_cells_v();      // requests cells voltage
@@ -358,6 +367,7 @@ void loop()
     kWhOut = kWhOut + (PackVoltagef * PackCurrentf * -1 / 3600 / 1000);
     Ah = Ah + (PackCurrentf / 3600);
   }
+  
   client.publish("/Powerwall/kWhInDay", dtostrf(kWhInDay, 1, 3, mqttBuffer), true);
   client.publish("/Powerwall/kWhOutDay", dtostrf(kWhOutDay, 1, 3, mqttBuffer), true);
   client.publish("/Powerwall/kWhIn", dtostrf(kWhIn, 1, 3, mqttBuffer), true);
@@ -366,9 +376,15 @@ void loop()
 
   if (millis() - timeLastL2Message > 10000)
   {
-    // timeout mqtt set L2demand to 0
+    // timeout mqtt set L2demand to 0W
     L2demand = 0;
     client.publish("/Powerwall/error", "timeout L2 subscribe, L2 delivery stopped", false);
+  }
+  if (PackVoltagef < lowVoltageCutoff)
+  {
+    // Powerwall almost empty set L2demand to 0W
+    L2demand = 0;
+    client.publish("/Powerwall/error", "Powerwall almost empty, L2 delivery stopped", false);
   }
   // put to much incomming solar energy to grid, when batt is full
   if (Cell01 > maxCellVoltage || Cell02 > maxCellVoltage || Cell03 > maxCellVoltage || Cell04 > maxCellVoltage || Cell05 > maxCellVoltage || Cell06 > maxCellVoltage || Cell07 > maxCellVoltage || Cell08 > maxCellVoltage || Cell09 > maxCellVoltage || Cell10 > maxCellVoltage || Cell11 > maxCellVoltage || Cell12 > maxCellVoltage || Cell13 > maxCellVoltage || Cell14 > maxCellVoltage)
@@ -386,6 +402,11 @@ void loop()
   else if (L2demand <= 0) L2demand = 0;
   client.publish("/Powerwall/L2Delivery", dtostrf(L2demand, 1, 0, mqttBuffer), true);
 
+  if (L2demand > 0)
+  {
+    kWhL2delivered += (L2demand / 3600 / 1000);
+  }
+  client.publish("/Powerwall/kWhL2delivered", dtostrf(kWhL2delivered, 1, 3, mqttBuffer), true);
   
   // -- Compute serial packet and send it to inverter (just the 3 bytes that change) --
   byte4 = int(L2demand/256); // (2 byte watts as short integer xaxb)
@@ -584,6 +605,7 @@ void reconnect()
       client.publish("homeassistant/sensor/Powerwall/kWhOut/config", P("{\"name\":\"Powerwall kWh out\",\"obj_idd\":\"PowerwallkWhOut\",\"uniq_id\":\"powerwall_kWhout\",\"unit_of_meas\":\"kWh\",\"stat_t\":\"/Powerwall/kWhOut\",\"stat_cla\":\"total\",\"dev_cla\":\"energy\"}"), true);
       client.publish("homeassistant/sensor/Powerwall/Ah/config", P("{\"name\":\"Powerwall Ah\",\"obj_idd\":\"PowerwallAh\",\"uniq_id\":\"powerwall_ah\",\"unit_of_meas\":\"Ah\",\"stat_t\":\"/Powerwall/Ah\",\"dev_cla\":\"energy\"}"), true);
       client.publish("homeassistant/sensor/Powerwall/L2Delivery/config", P("{\"name\":\"Powerwall L2 delivery\",\"obj_idd\":\"PowerwallL2Delivery\",\"uniq_id\":\"powerwall_l2_delivery\",\"unit_of_meas\":\"W\",\"stat_t\":\"/Powerwall/L2Delivery\",\"dev_cla\":\"power\"}"), true);
+      client.publish("homeassistant/sensor/Powerwall/kWhL2delivered/config", P("{\"name\":\"Soyo L2 delivered\",\"obj_idd\":\"SoyoL2delivered\",\"uniq_id\":\"soyo_l2_delivered\",\"unit_of_meas\":\"kWh\",\"stat_t\":\"/Powerwall/kWhL2delivered\",\"stat_cla\":\"total\",\"dev_cla\":\"energy\"}"), true);
     }
   }
 }
