@@ -99,8 +99,8 @@ void setup()
   serialpacket[6]=byte6;
   serialpacket[7]=byte7;
 
-   //EEPROM.put (0, 676.47);
-   //EEPROM.put (4, 702.03);
+   //EEPROM.put (0, 682.99);
+   //EEPROM.put (4, 706.502);
 }
 
 void loop()
@@ -404,7 +404,7 @@ void loop()
 
   if (L2demand > 0)
   {
-    kWhL2delivered += (L2demand / 3600 / 1000);
+    kWhL2delivered += ((float)L2demand / 3600 / 1000);
   }
   client.publish("/Powerwall/kWhL2delivered", dtostrf(kWhL2delivered, 1, 3, mqttBuffer), true);
   
