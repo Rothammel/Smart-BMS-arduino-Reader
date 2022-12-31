@@ -37,7 +37,7 @@ float kWhIn = 0, kWhOut = 0, Ah = 0, kWhInDay = 0, kWhOutDay = 0, kWhL1delivered
 const int   maxSoyoOutputL1 = 0;
 const int   maxSoyoOutputL2 = 900;
 const int   maxSoyoOutputL3 = 0;
-const float lowVoltageCutoff = 46.8;
+const float lowVoltageCutoff = 50.8;
 int L2demandCalc;
 // -- Serial data --
 byte byte0 = 36;
@@ -98,9 +98,13 @@ void setup()
   serialpacket[5]=byte5;
   serialpacket[6]=byte6;
   serialpacket[7]=byte7;
-
+  
+   //Powerwall kWh int
    //EEPROM.put (0, 682.99);
+   //Powerwall kWh out
    //EEPROM.put (4, 706.502);
+   //L2 kWh delivered
+   EEPROM.put (12, 320.0);
 }
 
 void loop()
