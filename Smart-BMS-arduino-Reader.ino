@@ -37,8 +37,8 @@ float kWhIn = 0, kWhOut = 0, Ah = 0, kWhInDay = 0, kWhOutDay = 0, kWhL1delivered
 const int   maxSoyoOutputL1 = 0;
 const int   maxSoyoOutputL2 = 900;
 const int   maxSoyoOutputL3 = 0;
-const float lowVoltageCutoff = 50.8;
-int L2demandCalc;
+float       lowVoltageCutoff = 50.8;
+int         L2demandCalc;
 // -- Serial data --
 byte byte0 = 36;
 byte byte1 = 86;
@@ -88,6 +88,7 @@ void setup()
   //EEPROM.get(8,  kWhL1delivered);
   EEPROM.get(12, kWhL2delivered);
   //EEPROM.get(16, kWhL3delivered);
+  EEPROM.get(20, lowVoltageCutoff);
 
   // set soyosource array
   serialpacket[0]=byte0;
@@ -104,7 +105,7 @@ void setup()
    //Powerwall kWh out
    //EEPROM.put (4, 706.502);
    //L2 kWh delivered
-   EEPROM.put (12, 320.0);
+   //EEPROM.put (12, 320.0);
 }
 
 void loop()
@@ -549,6 +550,18 @@ void callback(char* topic, byte* payload, unsigned int length)
     L2demand = L2demand + L2SMLPower + 5; //add grid import to current L2demand and add few watts
   }
 
+  if (String(topic)=="/Powerwall/setCutOffVoltage")
+  {
+    float inputFloat = atof(message_buff);
+    if (inputFloat > 46.0 && inputFloat < 55.0)
+    {
+      lowVoltageCutoff = inputFloat;
+      EEPROM.put(20, inputFloat);
+    }
+    
+  }
+
+
   // wenn topic /System/Zeit empfangen dann String zerlegen und Variablen füllen 
   if (String(topic)=="/System/Zeit")
   {
@@ -581,6 +594,8 @@ void reconnect()
       client.subscribe(P("/System/Zeit"));
       client.subscribe(P("/System/Datum"));
       client.subscribe(P("/SmartMeter/L2"));
+      client.subscribe(P("/Powerwall/setCutOffVoltage"));
+      
       //HomeAssistant autodiscover configs
       client.publish("homeassistant/sensor/Powerwall/Power/config", P("{\"name\":\"Powerwall Power\",\"obj_idd\":\"PowerwallPower\",\"uniq_id\":\"powerwall_power\",\"unit_of_meas\":\"W\",\"stat_t\":\"/Powerwall/Power\",\"dev_cla\":\"power\"}"), true);
       client.publish("homeassistant/sensor/Powerwall/Voltage/config", P("{\"name\":\"Powerwall Voltage\",\"obj_idd\":\"PowerwallVoltage\",\"uniq_id\":\"powerwall_voltage\",\"unit_of_meas\":\"V\",\"stat_t\":\"/Powerwall/Voltage\",\"dev_cla\":\"voltage\"}"), true);
