@@ -553,7 +553,7 @@ void callback(char* topic, byte* payload, unsigned int length)
   if (String(topic)=="/Powerwall/setCutOffVoltage")
   {
     float inputFloat = atof(message_buff);
-    if (inputFloat > 46.0 && inputFloat < 55.0)
+    if (inputFloat >= 46.0 && inputFloat <= 55.0)
     {
       lowVoltageCutoff = inputFloat;
       EEPROM.put(20, inputFloat);
