@@ -34,11 +34,11 @@ float Cell01, Cell02, Cell03, Cell04, Cell05, Cell06, Cell07, Cell08, Cell09, Ce
 float PowerInBat;
 float kWhIn = 0, kWhOut = 0, Ah = 0, kWhInDay = 0, kWhOutDay = 0, kWhL1delivered = 0, kWhL2delivered = 0, kWhL3delivered = 0;
 // Soyosource grit tie stuff
-const int   maxSoyoOutputL1 = 0;
+const int   maxSoyoOutputL1 = 900;
 const int   maxSoyoOutputL2 = 900;
-const int   maxSoyoOutputL3 = 0;
+const int   maxSoyoOutputL3 = 900;
 float       lowVoltageCutoff = 50.8;
-int         L2demandCalc;
+int         L1demandCalc, L2demandCalc, L3demandCalc;
 // -- Serial data --
 byte byte0 = 36;
 byte byte1 = 86;
@@ -49,17 +49,18 @@ byte byte5 = 0; //(2 byte watts as short integer xaxb)
 byte byte6 = 128;
 byte byte7 = 8; // checksum
 byte serialpacket[8];
-int L2SMLPower = 0; //amount of electricity being imported from grid on L2
-int L2demand = 0;   //current power inverter should deliver (default to zero)
+int L1SMLPower = 0, L2SMLPower = 0, L3SMLPower = 0; //amount of electricity being imported from grid on L2
+int L1demand = 0, L2demand = 0, L3demand = 0;   //current power inverter should deliver (default to zero)
+byte L1Pin = 22, L2Pin = 23, L3Pin = 24;
 
 // ---- Timer ----
 unsigned long  vorMillisSensoren = 0;      // Polling Timer BMS
 const long     intervalSensoren  = 1000;
 unsigned long vorMillisReconnect = 100000; // nur alle 100s einen reconnect versuchen
 const long    intervalReconnect  = 100000;
-//unsigned long  timeLastL1Message = 0;
+unsigned long  timeLastL1Message = 0;
 unsigned long  timeLastL2Message = 0;
-//unsigned long  timeLastL3Message = 0;
+unsigned long  timeLastL3Message = 0;
 
 EthernetClient ethClient;
 PubSubClient client(ethClient);
@@ -71,6 +72,10 @@ void setup()
   Serial1.begin(9600);     // BMS serial
   Serial2.begin(4800);     // RS485 serial
   Serial.println("BMS auslesen");
+  pinMode(L1Pin, OUTPUT);
+  pinMode(L2Pin, OUTPUT);
+  pinMode(L3Pin, OUTPUT);
+
 
   client.setServer(server, 1883); // Adresse des MQTT-Brokers
   client.setCallback(callback);   // Handler für eingehende Nachrichten
@@ -85,7 +90,7 @@ void setup()
   // read and set kWh counter from eeprom
   EEPROM.get(0,  kWhIn);
   EEPROM.get(4,  kWhOut);
-  //EEPROM.get(8,  kWhL1delivered);
+  EEPROM.get(8,  kWhL1delivered);
   EEPROM.get(12, kWhL2delivered);
   //EEPROM.get(16, kWhL3delivered);
   EEPROM.get(20, lowVoltageCutoff);
@@ -105,7 +110,8 @@ void setup()
    //Powerwall kWh out
    //EEPROM.put (4, 706.502);
    //L2 kWh delivered
-   //EEPROM.put (12, 320.0);
+   //EEPROM.put (12, 784.0);
+   //EEPROM.put (8, 200.0);
 }
 
 void loop()
@@ -130,7 +136,7 @@ void loop()
   {
     EEPROM.put (0,  kWhIn);
     EEPROM.put (4,  kWhOut);
-    //EEPROM.put (8,  kWhL1delivered);
+    EEPROM.put (8,  kWhL1delivered);
     EEPROM.put (12, kWhL2delivered);
     //EEPROM.put (16, kWhL3delivered);
   }
@@ -378,6 +384,13 @@ void loop()
   client.publish("/Powerwall/kWhIn", dtostrf(kWhIn, 1, 3, mqttBuffer), true);
   client.publish("/Powerwall/kWhOut", dtostrf(kWhOut, 1, 3, mqttBuffer), true);
   client.publish("/Powerwall/Ah", dtostrf(Ah, 1, 3, mqttBuffer), true);
+  
+  if (millis() - timeLastL1Message > 10000)
+  {
+    // timeout mqtt set L2demand to 0W
+    L1demand = 0;
+    client.publish("/Powerwall/error", "timeout L1 subscribe, L1 delivery stopped", false);
+  }
 
   if (millis() - timeLastL2Message > 10000)
   {
@@ -385,33 +398,95 @@ void loop()
     L2demand = 0;
     client.publish("/Powerwall/error", "timeout L2 subscribe, L2 delivery stopped", false);
   }
+
+  if (millis() - timeLastL3Message > 10000)
+  {
+    // timeout mqtt set L2demand to 0W
+    L3demand = 0;
+    client.publish("/Powerwall/error", "timeout L3 subscribe, L3 delivery stopped", false);
+  }
+
   if (PackVoltagef < lowVoltageCutoff)
   {
-    // Powerwall almost empty set L2demand to 0W
+    // Powerwall almost empty set L1/L2/l3demand to 0W
+    L1demand = 0;
     L2demand = 0;
+    L3demand = 0;
     client.publish("/Powerwall/error", "Powerwall almost empty, L2 delivery stopped", false);
   }
   // put to much incomming solar energy to grid, when batt is full
   if (Cell01 > maxCellVoltage || Cell02 > maxCellVoltage || Cell03 > maxCellVoltage || Cell04 > maxCellVoltage || Cell05 > maxCellVoltage || Cell06 > maxCellVoltage || Cell07 > maxCellVoltage || Cell08 > maxCellVoltage || Cell09 > maxCellVoltage || Cell10 > maxCellVoltage || Cell11 > maxCellVoltage || Cell12 > maxCellVoltage || Cell13 > maxCellVoltage || Cell14 > maxCellVoltage)
   {
+    L1demandCalc += 50;
+    if(L1demandCalc > maxSoyoOutputL1) L1demandCalc = maxSoyoOutputL1;
     L2demandCalc += 50;
     if(L2demandCalc > maxSoyoOutputL2) L2demandCalc = maxSoyoOutputL2;
+    L3demandCalc += 50;
+    if(L3demandCalc > maxSoyoOutputL3) L3demandCalc = maxSoyoOutputL3;
   }
   else
   {
+    L1demandCalc -= 10;
+    if(L1demandCalc < 0) L1demandCalc = 0;
     L2demandCalc -= 10;
     if(L2demandCalc < 0) L2demandCalc = 0;
+    L3demandCalc -= 10;
+    if(L3demandCalc < 0) L3demandCalc = 0;
   }
+
+  L1demand += L1demandCalc;
   L2demand += L2demandCalc;
+  L3demand += L3demandCalc;
+  if (L1demand >= maxSoyoOutputL1) L1demand = maxSoyoOutputL1;
+  else if (L1demand <= 0) L1demand = 0;
+  client.publish("/Powerwall/L1Delivery", dtostrf(L1demand, 1, 0, mqttBuffer), true);
+
   if (L2demand >= maxSoyoOutputL2) L2demand = maxSoyoOutputL2;
   else if (L2demand <= 0) L2demand = 0;
   client.publish("/Powerwall/L2Delivery", dtostrf(L2demand, 1, 0, mqttBuffer), true);
+
+  if (L3demand >= maxSoyoOutputL3) L3demand = maxSoyoOutputL3;
+  else if (L3demand <= 0) L3demand = 0;
+  client.publish("/Powerwall/L3Delivery", dtostrf(L3demand, 1, 0, mqttBuffer), true);
+
+  if (L1demand > 0)
+  {
+    kWhL1delivered += ((float)L1demand / 3600 / 1000);
+  }
+  client.publish("/Powerwall/kWhL1delivered", dtostrf(kWhL1delivered, 1, 3, mqttBuffer), true);
 
   if (L2demand > 0)
   {
     kWhL2delivered += ((float)L2demand / 3600 / 1000);
   }
   client.publish("/Powerwall/kWhL2delivered", dtostrf(kWhL2delivered, 1, 3, mqttBuffer), true);
+
+  if (L3demand > 0)
+  {
+    kWhL3delivered += ((float)L3demand / 3600 / 1000);
+  }
+  client.publish("/Powerwall/kWhL3delivered", dtostrf(kWhL3delivered, 1, 3, mqttBuffer), true);
+  
+  // -- Compute serial packet and send it to inverter (just the 3 bytes that change) --
+  byte4 = int(L1demand/256); // (2 byte watts as short integer xaxb)
+  if (byte4 < 0 or byte4 > 256){
+      byte4 = 0;}
+  byte5 = int(L1demand)-(byte4 * 256); // (2 byte watts as short integer xaxb)
+  if (byte5 < 0 or byte5 > 256) {
+      byte5 = 0;}
+  byte7 = (264 - byte4 - byte5); //checksum calculation
+  if (byte7 > 256){
+      byte7 = 8;}
+
+  serialpacket[4]=byte4;
+  serialpacket[5]=byte5;
+  serialpacket[7]=byte7;
+
+  digitalWrite(L1Pin, HIGH);
+  delay(1);
+  Serial2.write(serialpacket,8);
+  Serial2.flush();
+  digitalWrite(L1Pin, LOW);
   
   // -- Compute serial packet and send it to inverter (just the 3 bytes that change) --
   byte4 = int(L2demand/256); // (2 byte watts as short integer xaxb)
@@ -427,7 +502,33 @@ void loop()
   serialpacket[4]=byte4;
   serialpacket[5]=byte5;
   serialpacket[7]=byte7;
+
+  digitalWrite(L2Pin, HIGH);
+  delay(1);
   Serial2.write(serialpacket,8);
+  Serial2.flush();
+  digitalWrite(L2Pin, LOW);
+  
+  // -- Compute serial packet and send it to inverter (just the 3 bytes that change) --
+  byte4 = int(L3demand/256); // (2 byte watts as short integer xaxb)
+  if (byte4 < 0 or byte4 > 256){
+      byte4 = 0;}
+  byte5 = int(L3demand)-(byte4 * 256); // (2 byte watts as short integer xaxb)
+  if (byte5 < 0 or byte5 > 256) {
+      byte5 = 0;}
+  byte7 = (264 - byte4 - byte5); //checksum calculation
+  if (byte7 > 256){
+      byte7 = 8;}
+
+  serialpacket[4]=byte4;
+  serialpacket[5]=byte5;
+  serialpacket[7]=byte7;
+
+  digitalWrite(L3Pin, HIGH);
+  delay(1);
+  Serial2.write(serialpacket,8);
+  Serial2.flush();
+  digitalWrite(L3Pin, LOW);
 
   } // 1sec loop
 }
@@ -542,12 +643,26 @@ void callback(char* topic, byte* payload, unsigned int length)
   }
   message_buff[i] = '\0';
   // wenn topic /SmartMeter/L2 empfangen wurde
+  if (String(topic)=="/SmartMeter/L1")
+  {
+    timeLastL1Message = millis();
+    L1SMLPower = atoi(message_buff);
+    if (L1SMLPower < 0) L1SMLPower = L1SMLPower / 2;
+    L1demand = L1demand + L1SMLPower + 5; //add grid import to current L2demand and add few watts
+  }
   if (String(topic)=="/SmartMeter/L2")
   {
     timeLastL2Message = millis();
     L2SMLPower = atoi(message_buff);
     if (L2SMLPower < 0) L2SMLPower = L2SMLPower / 2;
     L2demand = L2demand + L2SMLPower + 5; //add grid import to current L2demand and add few watts
+  }
+  if (String(topic)=="/SmartMeter/L3")
+  {
+    timeLastL3Message = millis();
+    L3SMLPower = atoi(message_buff);
+    if (L3SMLPower < 0) L3SMLPower = L3SMLPower / 2;
+    L3demand = L3demand + L3SMLPower + 5; //add grid import to current L2demand and add few watts
   }
 
   if (String(topic)=="/Powerwall/setCutOffVoltage")
@@ -593,7 +708,9 @@ void reconnect()
       // Abonierte Topics:
       client.subscribe(P("/System/Zeit"));
       client.subscribe(P("/System/Datum"));
+      client.subscribe(P("/SmartMeter/L1"));
       client.subscribe(P("/SmartMeter/L2"));
+      client.subscribe(P("/SmartMeter/L3"));
       client.subscribe(P("/Powerwall/setCutOffVoltage"));
       
       //HomeAssistant autodiscover configs
@@ -623,8 +740,12 @@ void reconnect()
       client.publish("homeassistant/sensor/Powerwall/kWhIn/config", P("{\"name\":\"Powerwall kWh in\",\"obj_idd\":\"PowerwallkWhIn\",\"uniq_id\":\"powerwall_kWhin\",\"unit_of_meas\":\"kWh\",\"stat_t\":\"/Powerwall/kWhIn\",\"stat_cla\":\"total\",\"dev_cla\":\"energy\"}"), true);
       client.publish("homeassistant/sensor/Powerwall/kWhOut/config", P("{\"name\":\"Powerwall kWh out\",\"obj_idd\":\"PowerwallkWhOut\",\"uniq_id\":\"powerwall_kWhout\",\"unit_of_meas\":\"kWh\",\"stat_t\":\"/Powerwall/kWhOut\",\"stat_cla\":\"total\",\"dev_cla\":\"energy\"}"), true);
       client.publish("homeassistant/sensor/Powerwall/Ah/config", P("{\"name\":\"Powerwall Ah\",\"obj_idd\":\"PowerwallAh\",\"uniq_id\":\"powerwall_ah\",\"unit_of_meas\":\"Ah\",\"stat_t\":\"/Powerwall/Ah\",\"dev_cla\":\"energy\"}"), true);
+      client.publish("homeassistant/sensor/Powerwall/L1Delivery/config", P("{\"name\":\"Powerwall L1 delivery\",\"obj_idd\":\"PowerwallL1Delivery\",\"uniq_id\":\"powerwall_l1_delivery\",\"unit_of_meas\":\"W\",\"stat_t\":\"/Powerwall/L1Delivery\",\"dev_cla\":\"power\"}"), true);
+      client.publish("homeassistant/sensor/Powerwall/kWhL1delivered/config", P("{\"name\":\"Soyo L1 delivered\",\"obj_idd\":\"SoyoL1delivered\",\"uniq_id\":\"soyo_l1_delivered\",\"unit_of_meas\":\"kWh\",\"stat_t\":\"/Powerwall/kWhL1delivered\",\"stat_cla\":\"total\",\"dev_cla\":\"energy\"}"), true);
       client.publish("homeassistant/sensor/Powerwall/L2Delivery/config", P("{\"name\":\"Powerwall L2 delivery\",\"obj_idd\":\"PowerwallL2Delivery\",\"uniq_id\":\"powerwall_l2_delivery\",\"unit_of_meas\":\"W\",\"stat_t\":\"/Powerwall/L2Delivery\",\"dev_cla\":\"power\"}"), true);
       client.publish("homeassistant/sensor/Powerwall/kWhL2delivered/config", P("{\"name\":\"Soyo L2 delivered\",\"obj_idd\":\"SoyoL2delivered\",\"uniq_id\":\"soyo_l2_delivered\",\"unit_of_meas\":\"kWh\",\"stat_t\":\"/Powerwall/kWhL2delivered\",\"stat_cla\":\"total\",\"dev_cla\":\"energy\"}"), true);
+      client.publish("homeassistant/sensor/Powerwall/L3Delivery/config", P("{\"name\":\"Powerwall L3 delivery\",\"obj_idd\":\"PowerwallL3Delivery\",\"uniq_id\":\"powerwall_l3_delivery\",\"unit_of_meas\":\"W\",\"stat_t\":\"/Powerwall/L3Delivery\",\"dev_cla\":\"power\"}"), true);
+      client.publish("homeassistant/sensor/Powerwall/kWhL3delivered/config", P("{\"name\":\"Soyo L3 delivered\",\"obj_idd\":\"SoyoL3delivered\",\"uniq_id\":\"soyo_l3_delivered\",\"unit_of_meas\":\"kWh\",\"stat_t\":\"/Powerwall/kWhL3delivered\",\"stat_cla\":\"total\",\"dev_cla\":\"energy\"}"), true);
     }
   }
 }
