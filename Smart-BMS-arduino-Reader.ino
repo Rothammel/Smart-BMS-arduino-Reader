@@ -417,20 +417,30 @@ void loop()
   // put to much incomming solar energy to grid, when batt is full
   if (Cell01 > maxCellVoltage || Cell02 > maxCellVoltage || Cell03 > maxCellVoltage || Cell04 > maxCellVoltage || Cell05 > maxCellVoltage || Cell06 > maxCellVoltage || Cell07 > maxCellVoltage || Cell08 > maxCellVoltage || Cell09 > maxCellVoltage || Cell10 > maxCellVoltage || Cell11 > maxCellVoltage || Cell12 > maxCellVoltage || Cell13 > maxCellVoltage || Cell14 > maxCellVoltage)
   {
-    L1demandCalc += 50;
-    if(L1demandCalc > maxSoyoOutputL1) L1demandCalc = maxSoyoOutputL1;
-    L2demandCalc += 50;
-    if(L2demandCalc > maxSoyoOutputL2) L2demandCalc = maxSoyoOutputL2;
-    L3demandCalc += 50;
-    if(L3demandCalc > maxSoyoOutputL3) L3demandCalc = maxSoyoOutputL3;
+    //search for lowest demand
+    if(L1demand < L2demand && L1demand < L3demand)
+    {
+      L1demandCalc += 30;
+      if(L1demandCalc > maxSoyoOutputL1) L1demandCalc = maxSoyoOutputL1;
+    }
+    if(L2demand < L1demand && L2demand < L3demand)
+    {
+      L2demandCalc += 30;
+      if(L2demandCalc > maxSoyoOutputL2) L2demandCalc = maxSoyoOutputL2;
+    }
+    if(L3demand < L1demand && L3demand < L2demand)
+    {
+      L3demandCalc += 30;
+      if(L3demandCalc > maxSoyoOutputL3) L3demandCalc = maxSoyoOutputL3;
+    }
   }
   else
   {
-    L1demandCalc -= 10;
+    L1demandCalc -= 5;
     if(L1demandCalc < 0) L1demandCalc = 0;
-    L2demandCalc -= 10;
+    L2demandCalc -= 5;
     if(L2demandCalc < 0) L2demandCalc = 0;
-    L3demandCalc -= 10;
+    L3demandCalc -= 5;
     if(L3demandCalc < 0) L3demandCalc = 0;
   }
 
