@@ -69,6 +69,7 @@ PubSubClient client(ethClient);
 void setup()
 {
   Serial.begin(115200);    // debug serial
+  Serial.println("Setup Anfang");
   Serial1.begin(9600);     // BMS serial
   Serial2.begin(4800);     // RS485 serial
   Serial.println("BMS auslesen");
@@ -418,17 +419,17 @@ void loop()
   if (Cell01 > maxCellVoltage || Cell02 > maxCellVoltage || Cell03 > maxCellVoltage || Cell04 > maxCellVoltage || Cell05 > maxCellVoltage || Cell06 > maxCellVoltage || Cell07 > maxCellVoltage || Cell08 > maxCellVoltage || Cell09 > maxCellVoltage || Cell10 > maxCellVoltage || Cell11 > maxCellVoltage || Cell12 > maxCellVoltage || Cell13 > maxCellVoltage || Cell14 > maxCellVoltage)
   {
     //search for lowest demand
-    if(L1demand < L2demand && L1demand < L3demand)
+    if(L1demand <= L2demand && L1demand <= L3demand)
     {
       L1demandCalc += 30;
       if(L1demandCalc > maxSoyoOutputL1) L1demandCalc = maxSoyoOutputL1;
     }
-    if(L2demand < L1demand && L2demand < L3demand)
+    if(L2demand <= L1demand && L2demand <= L3demand)
     {
       L2demandCalc += 30;
       if(L2demandCalc > maxSoyoOutputL2) L2demandCalc = maxSoyoOutputL2;
     }
-    if(L3demand < L1demand && L3demand < L2demand)
+    if(L3demand <= L1demand && L3demand <= L2demand)
     {
       L3demandCalc += 30;
       if(L3demandCalc > maxSoyoOutputL3) L3demandCalc = maxSoyoOutputL3;
@@ -478,6 +479,7 @@ void loop()
   client.publish("/Powerwall/kWhL3delivered", dtostrf(kWhL3delivered, 1, 3, mqttBuffer), true);
   
   // -- Compute serial packet and send it to inverter (just the 3 bytes that change) --
+  
   byte4 = int(L1demand/256); // (2 byte watts as short integer xaxb)
   if (byte4 < 0 or byte4 > 256){
       byte4 = 0;}
