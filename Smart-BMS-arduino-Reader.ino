@@ -4,6 +4,7 @@ char StringBuffer[250];
 
 //#include <SoftwareSerial.h>
 #include <Ethernet.h>        //für w5100 im arduino "built in" enthalten
+#include <utility/w5100.h>
 #include <PubSubClient.h>    //MQTT Bibliothek von Nick O'Leary
 #include <SPI.h>             //für w5100 im arduino "built in" enthalten
 #include <avr/wdt.h>         //Watchdog
@@ -81,9 +82,13 @@ void setup()
   client.setServer(server, 1883); // Adresse des MQTT-Brokers
   client.setCallback(callback);   // Handler für eingehende Nachrichten
   client.setBufferSize(512);      // increase MQTT buffer for Home Asssistant auto discover
+  client.setSocketTimeout(2);     // decrease timeout (default 15s is way too mutch for WDT)
+  client.setKeepAlive(2);
   
   // Ethernet-Verbindung aufbauen
   Ethernet.begin(mac, ip);
+  W5100.setRetransmissionTime(0x07D0);
+  W5100.setRetransmissionCount(2);
   // Watchdog aktivieren, nicht unter 250ms, folgende timeout verwenden:
   // WDTO_1S, WDTO_2S, WDTO_4S, WDTO_8S
   wdt_enable(WDTO_8S);
