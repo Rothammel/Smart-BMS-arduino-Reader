@@ -34,6 +34,7 @@ float CellMin = 5, CellMax = 0, Cellsum = 0;
 float Cell01, Cell02, Cell03, Cell04, Cell05, Cell06, Cell07, Cell08, Cell09, Cell10, Cell11, Cell12, Cell13, Cell14;
 float PowerInBat;
 float kWhIn = 0, kWhOut = 0, Ah = 0, kWhInDay = 0, kWhOutDay = 0, kWhL1delivered = 0, kWhL2delivered = 0, kWhL3delivered = 0;
+byte  flagCutOff = false;
 // Soyosource grit tie stuff
 const int   maxSoyoOutputL1 = 900;
 const int   maxSoyoOutputL2 = 900;
@@ -112,7 +113,7 @@ void setup()
   serialpacket[7]=byte7;
   
    //Powerwall kWh int
-   //EEPROM.put (0, 682.99);
+   //EEPROM.put (0, 2180.99);
    //Powerwall kWh out
    //EEPROM.put (4, 706.502);
    //L2 kWh delivered
@@ -412,14 +413,24 @@ void loop()
     client.publish("/Powerwall/error", "timeout L3 subscribe, L3 delivery stopped", false);
   }
 
-  if (PackVoltagef < lowVoltageCutoff)
+  if (PackVoltagef < lowVoltageCutoff && flagCutOff == false)
   {
-    // Powerwall almost empty set L1/L2/l3demand to 0W
+    client.publish("/Powerwall/error", "Powerwall almost empty, delivery stopped", false);
+    flagCutOff = true;
+  }
+  else if (PackVoltagef > lowVoltageCutoff + 0.65 && flagCutOff == true)
+  {
+    flagCutOff = false;
+  }
+
+  if (flagCutOff == true)
+  {
+    // Powerwall almost empty set L1/L2/l3 demand to 0W
     L1demand = 0;
     L2demand = 0;
     L3demand = 0;
-    client.publish("/Powerwall/error", "Powerwall almost empty, L2 delivery stopped", false);
   }
+
   // put to much incomming solar energy to grid, when batt is full
   if (Cell01 > maxCellVoltage || Cell02 > maxCellVoltage || Cell03 > maxCellVoltage || Cell04 > maxCellVoltage || Cell05 > maxCellVoltage || Cell06 > maxCellVoltage || Cell07 > maxCellVoltage || Cell08 > maxCellVoltage || Cell09 > maxCellVoltage || Cell10 > maxCellVoltage || Cell11 > maxCellVoltage || Cell12 > maxCellVoltage || Cell13 > maxCellVoltage || Cell14 > maxCellVoltage)
   {
@@ -685,7 +696,7 @@ void callback(char* topic, byte* payload, unsigned int length)
   if (String(topic)=="/Powerwall/setCutOffVoltage")
   {
     float inputFloat = atof(message_buff);
-    if (inputFloat >= 46.0 && inputFloat <= 55.0)
+    if (inputFloat >= 42.0 && inputFloat <= 55.0)
     {
       lowVoltageCutoff = inputFloat;
       EEPROM.put(20, inputFloat);
