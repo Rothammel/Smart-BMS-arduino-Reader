@@ -418,7 +418,7 @@ void loop()
     client.publish("/Powerwall/error", "Powerwall almost empty, delivery stopped", false);
     flagCutOff = true;
   }
-  else if (PackVoltagef > lowVoltageCutoff + 0.65 && flagCutOff == true)
+  else if (PackVoltagef > lowVoltageCutoff + 0.85 && flagCutOff == true)
   {
     flagCutOff = false;
   }
